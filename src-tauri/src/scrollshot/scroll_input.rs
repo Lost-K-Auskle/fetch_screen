@@ -36,15 +36,7 @@ impl ScrollInput {
     }
 
     pub fn scroll(&self, delta: i32) -> Result<(), String> {
-        let hwnd = self.current_hwnd
-            .map(|h| HWND(h as *mut _))
-            .ok_or_else(|| "未设置目标窗口".to_string())?;
-
-        unsafe {
-            let _ = SetForegroundWindow(hwnd);
-        }
-        std::thread::sleep(std::time::Duration::from_millis(20));
-
+        // SendInput 滚轮事件会发给光标下的窗口，无需 SetForegroundWindow（避免抢焦点干扰用户）
         let input = INPUT {
             r#type: INPUT_MOUSE,
             Anonymous: INPUT_0 {

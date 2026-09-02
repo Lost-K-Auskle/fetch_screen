@@ -14,6 +14,23 @@ pub struct AppConfig {
     pub pin: PinConfig,
     pub scrollshot: ScrollshotConfig,
     pub annotation: AnnotationConfig,
+    /// 截图时是否隐藏 Fetch Screen 主 UI 窗口（避免主窗口被截进截图）
+    #[serde(default = "default_hide_ui_on_capture")]
+    pub hide_ui_on_capture: bool,
+    /// 预览窗鼠标拖拽方式: "left_drag" = 左键拖窗 / Shift+左键平移; "shift_drag" = 左键平移 / Shift+左键拖窗
+    #[serde(default = "default_preview_drag_mode")]
+    pub preview_drag_mode: String,
+    /// 预览窗无截图区域背景: "black" = 黑色 / "white" = 白色 / "hollow" = 镂空(透明)
+    #[serde(default = "default_preview_bg_mode")]
+    pub preview_bg_mode: String,
+}
+
+fn default_preview_drag_mode() -> String {
+    "left_drag".to_string()
+}
+
+fn default_preview_bg_mode() -> String {
+    "black".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,9 +76,9 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             hotkeys: HotkeyConfig {
-                screenshot: "Alt+S".to_string(),
-                screenshot_full: "Ctrl+Shift+S".to_string(),
-                scrollshot: "Ctrl+Alt+S".to_string(),
+                screenshot: "Alt+Shift+A".to_string(),
+                screenshot_full: "Ctrl+Alt+A".to_string(),
+                scrollshot: "Ctrl+Shift+A".to_string(),
                 pin_last: "Ctrl+Shift+P".to_string(),
             },
             save: SaveConfig {
@@ -87,8 +104,15 @@ impl Default for AppConfig {
                 default_line_width: 3,
                 font_size: 16,
             },
+            hide_ui_on_capture: true,
+            preview_drag_mode: "left_drag".to_string(),
+            preview_bg_mode: "black".to_string(),
         }
     }
+}
+
+fn default_hide_ui_on_capture() -> bool {
+    true
 }
 
 fn dirs_next() -> Option<String> {

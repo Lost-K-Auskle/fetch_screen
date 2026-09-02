@@ -58,3 +58,25 @@ pub fn save_to_cache(img: &DynamicImage, prefix: &str) -> Result<std::path::Path
     img.save(&path).map_err(|e| format!("保存截图缓存失败: {}", e))?;
     Ok(path)
 }
+
+/// 快速保存缓存 (JPEG，编码快且文件小，适合 overlay 显示图；裁剪用独立 GDI 无损路径)
+pub fn save_to_cache_jpeg(img: &DynamicImage, prefix: &str) -> Result<std::path::PathBuf, String> {
+    let dir = ensure_cache_dir();
+    let path = dir.join(format!("{}_{}.jpg", prefix, uuid::Uuid::new_v4()));
+    let mut out = std::io::BufWriter::new(
+        std::fs::File::create(&path).map_err(|e| format!("创建缓存文件失败: {}", e))?,
+    );
+    img.write_to(&mut out, image::ImageFormat::Jpeg)
+        .map_err(|e| format!("JPEG 编码失败: {}", e))?;
+    Ok(path)
+}
+
+/// 将图像编码为 JPEG 的 data URL（base64），供 overlay 直接显示，规避 asset 协议问题
+pub fn encode_jpeg_data_url(img: &DynamicImage) -> Result<String, String> {
+    use std::io::Write;
+    let mut buf = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Jpeg)
+        .map_err(|e| format!("JPEG 编码失败: {}", e))?;
+    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &buf);
+    Ok(format!("data:image/jpeg;base64,{}", b64))
+}

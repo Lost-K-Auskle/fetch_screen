@@ -58,3 +58,13 @@ pub struct OffsetResult {
     pub confidence: f64,
     pub algorithm: &'static str, // "mad" | "fft" | "orb"
 }
+
+/// 滚动截图进度（推送给前端）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrollProgress {
+    pub frame_count: u32,
+    pub total_height: u32,
+    pub max_length: u32,
+    /// 当前拼接结果的缩略图 data URL（供选区右侧实时预览）
+    pub preview_data_url: Option<String>,
+}

@@ -1,215 +1,292 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import ScreenshotOverlay from './pages/overlay/ScreenshotOverlay';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useScreenshotStore } from './stores/screenshotStore';
+import SettingsModal, { AppConfig } from './components/SettingsModal';
+
+type OverlayIntent = 'region' | 'scroll';
+
+interface RegionCompletePayload {
+  path: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// —— 简约主题：单一中性色板 + 一个克制的主色，hover 才点亮 ——
+const palette = {
+  bg: '#0f1116',
+  surface: '#171a21',
+  surfaceHover: '#1b1f28',
+  border: '#252a34',
+  accent: '#4f7cff',
+  text: '#e8eaf0',
+  textDim: '#9aa1ad',
+  textFaint: '#6b7280',
+};
+
+const css = `
+  .fs-btn {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; padding: 13px 16px;
+    background: ${palette.surface}; border: 1px solid ${palette.border}; border-radius: 10px;
+    color: ${palette.text}; cursor: pointer; font-size: 14px;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .fs-btn:hover { border-color: ${palette.accent}; background: ${palette.surfaceHover}; }
+  .fs-btn:active { background: #12151c; }
+  .fs-ghost {
+    background: transparent; border: none; color: ${palette.textDim};
+    font-size: 13px; cursor: pointer; padding: 6px 12px; border-radius: 7px;
+    transition: color .15s ease, background .15s ease;
+  }
+  .fs-ghost:hover { color: ${palette.text}; background: ${palette.surface}; }
+`;
 
 function App() {
   const store = useScreenshotStore();
-  const [mode, setMode] = useState<'home' | 'screenshot_region' | 'screenshot_full' | 'scroll_capture'>('home');
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // 标记 overlay 的用途：普通区域截图 / 滚动截图选区
+  const overlayIntent = useRef<OverlayIntent>('region');
+
+  // 成功提示自动消失
+  useEffect(() => {
+    if (!success) return;
+    const t = setTimeout(() => setSuccess(null), 4000);
+    return () => clearTimeout(t);
+  }, [success]);
+
+  // 加载配置（按钮快捷键提示用）
+  useEffect(() => {
+    invoke('get_config')
+      .then((c) => setAppConfig(c as AppConfig))
+      .catch(console.error);
+  }, []);
 
   // 监听全局热键事件
   useEffect(() => {
+    let cancelled = false;
     const unlisteners: Array<() => void> = [];
 
-    listen('hotkey:screenshot_region', () => {
+    const add = (event: string, handler: (event: any) => void) => {
+      listen(event, handler).then((un) => {
+        if (cancelled) un();
+        else unlisteners.push(un);
+      });
+    };
+
+    add('hotkey:screenshot_region', () => {
+      overlayIntent.current = 'region';
       startRegionCapture();
-    }).then((fn) => { unlisteners.push(fn); });
-
-    listen('hotkey:screenshot_full', () => {
-      startFullCapture();
-    }).then((fn) => { unlisteners.push(fn); });
-
-    listen('hotkey:scroll_capture', () => {
-      setMode('scroll_capture');
-    }).then((fn) => { unlisteners.push(fn); });
-
-    listen('tray:screenshot', () => {
+    });
+    add('hotkey:screenshot_full', () => startFullCapture());
+    add('hotkey:scroll_capture', () => {
+      overlayIntent.current = 'scroll';
+      startRegionCapture(); // 先框选区域
+    });
+    add('tray:screenshot', () => {
+      overlayIntent.current = 'region';
       startRegionCapture();
-    }).then((fn) => { unlisteners.push(fn); });
+    });
+
+    // 全屏选区覆盖层的结果
+    add('region:complete', (event) => {
+      const payload = event.payload as RegionCompletePayload;
+      if (overlayIntent.current === 'scroll') {
+        handleScrollRegionConfirmed(payload);
+      } else {
+        handleRegionComplete(payload.path);
+      }
+      overlayIntent.current = 'region'; // 重置
+    });
+    add('region:cancelled', () => {
+      overlayIntent.current = 'region';
+      getCurrentWindow().show().catch(() => {});
+    });
+
+    // 滚动截图完成 → 显示预览
+    add('scroll:done', (event) => {
+      const { path } = event.payload as { path: string };
+      getCurrentWindow().show().catch(() => {});
+      invoke('show_preview', { imagePath: path }).catch((err) => {
+        console.error('显示预览失败:', err);
+        setError(`显示预览失败: ${err}`);
+      });
+      setSuccess('滚动长截图完成');
+      // 保存到图片目录（剪贴板已由后端自动复制）
+      invoke('save_to_file', { imagePath: path, destPath: null, format: null }).catch(() => {});
+    });
 
     return () => {
+      cancelled = true;
       unlisteners.forEach((fn) => fn());
     };
   }, []);
 
-  // 开始区域截图
+  // 开始区域截图：打开全屏选区覆盖层
   const startRegionCapture = useCallback(async () => {
     try {
-      // 先全屏截图作为基础
-      const path = await invoke<string>('capture_fullscreen');
-      store.setFullscreenCachePath(path);
-      setMode('screenshot_region');
+      await invoke('open_region_overlay');
+      setError(null);
     } catch (err) {
-      console.error('全屏截图失败:', err);
+      console.error('打开选区覆盖层失败:', err);
+      setError(`打开选区覆盖层失败: ${err}`);
     }
-  }, [store]);
+  }, []);
 
   // 开始全屏截图 (直接保存)
   const startFullCapture = useCallback(async () => {
     try {
       const path = await invoke<string>('capture_fullscreen');
-      await invoke('copy_to_clipboard', { imagePath: path });
-      await invoke('save_to_file', { imagePath: path, destPath: null, format: null });
       store.setLastScreenshotPath(path);
+      setError(null);
+      setSuccess('已截图，请操作浮窗');
+      invoke('show_preview', { imagePath: path }).catch((err) => {
+        console.error('显示预览失败:', err);
+        setError(`显示预览失败: ${err}`);
+      });
+      // 剪贴板已由后端自动复制
+      invoke('save_to_file', { imagePath: path, destPath: null, format: null })
+        .catch((err) => { console.error('保存失败:', err); setError(`保存失败: ${err}`); });
     } catch (err) {
       console.error('全屏截图失败:', err);
+      setError(`全屏截图失败: ${err}`);
     }
   }, [store]);
 
-  // 区域截图完成
+  // 区域截图完成（来自全屏选区覆盖层）
   const handleRegionComplete = useCallback(async (regionPath: string) => {
-    try {
-      await invoke('copy_to_clipboard', { imagePath: regionPath });
-      await invoke('save_to_file', { imagePath: regionPath, destPath: null, format: null });
-      store.setLastScreenshotPath(regionPath);
-      store.setFullscreenCachePath(null);
-      setMode('home');
-    } catch (err) {
-      console.error('保存截图失败:', err);
-    }
+    store.setLastScreenshotPath(regionPath);
+    setError(null);
+    setSuccess('区域截图完成');
+    invoke('show_preview', { imagePath: regionPath }).catch((err) => {
+      console.error('显示预览失败:', err);
+      setError(`显示预览失败: ${err}`);
+    });
+    // 剪贴板已由后端自动复制
+    invoke('save_to_file', { imagePath: regionPath, destPath: null, format: null })
+      .catch((err) => { console.error('保存失败:', err); setError(`保存失败: ${err}`); });
+    try { await getCurrentWindow().show(); } catch { /* ignore */ }
   }, [store]);
 
-  // 取消截图
-  const handleCancel = useCallback(() => {
-    store.setFullscreenCachePath(null);
-    setMode('home');
-  }, [store]);
-
-  // 贴图
-  const handlePinImage = useCallback(async () => {
-    if (!store.lastScreenshotPath) return;
+  // 滚动截图选区确认 → 隐藏主窗口 → 开进度窗口 → 启动后端捕获
+  const handleScrollRegionConfirmed = useCallback(async (payload: RegionCompletePayload) => {
+    setError(null);
+    // 隐藏主窗口（避免出现在后续截帧中）；除非用户在设置里关闭了"截图时隐藏 UI"
     try {
-      const pinId = await invoke<string>('create_pin_window', {
-        imagePath: store.lastScreenshotPath,
-        x: 200, y: 200, width: 400, height: 300,
+      const cfg = await invoke<AppConfig>('get_config');
+      if (cfg?.hide_ui_on_capture !== false) {
+        await getCurrentWindow().hide();
+      }
+    } catch { /* ignore */ }
+
+    // 打开选区边框浮层（点击穿透，边滚边看选区）
+    try {
+      await invoke('open_scroll_region_frame', {
+        x: payload.x,
+        y: payload.y,
+        width: payload.width,
+        height: payload.height,
       });
-      store.addPin(pinId);
     } catch (err) {
-      console.error('贴图失败:', err);
+      console.error('打开选区边框失败:', err);
     }
-  }, [store]);
 
-  // 渲染截图覆盖层
-  if (mode === 'screenshot_region' && store.fullscreenCachePath) {
-    return (
-      <ScreenshotOverlay
-        imagePath={store.fullscreenCachePath}
-        onComplete={handleRegionComplete}
-        onCancel={handleCancel}
-      />
-    );
-  }
+    // 打开进度浮层
+    try {
+      await invoke('open_scroll_toolbar', {
+        x: payload.x,
+        y: payload.y,
+        width: payload.width,
+        height: payload.height,
+      });
+    } catch (err) {
+      console.error('打开进度窗口失败:', err);
+      setError(`打开进度窗口失败: ${err}`);
+      try { await getCurrentWindow().show(); } catch { /* ignore */ }
+    }
+  }, []);
 
-  // 主界面
+  const openCache = () => invoke('open_cache_dir').catch((err) => setError(`打开缓存目录失败: ${err}`));
+
   return (
-    <div style={{
-      width: '100vw',
-      height: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: '#1a1a2e',
-      color: '#e0e0e0',
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-    }}>
-      <h1 style={{ fontSize: '2.2rem', marginBottom: '0.3rem', fontWeight: 700 }}>
-        📷 Fetch Screen
-      </h1>
-      <p style={{ color: '#888', marginBottom: '2.5rem', fontSize: '0.95rem' }}>
-        截图 · 滚动长截图 · 贴图置顶
-      </p>
-
+    <>
+      <style>{css}</style>
       <div style={{
-        background: '#16213e',
-        padding: '2rem',
-        borderRadius: '16px',
-        minWidth: '380px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '1rem',
+        height: '100vh', display: 'flex', flexDirection: 'column',
+        background: palette.bg, color: palette.text,
+        fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
       }}>
-        <ActionButton
-          icon="🔲"
-          label="区域截图"
-          hint="Alt+A"
-          color="#0f3460"
-          onClick={startRegionCapture}
-        />
-        <ActionButton
-          icon="🖥️"
-          label="全屏截图"
-          hint="Ctrl+Alt+A"
-          color="#0f3460"
-          onClick={startFullCapture}
-        />
-        <ActionButton
-          icon="📜"
-          label="滚动长截图"
-          hint="Ctrl+Shift+A"
-          color="#533483"
-          onClick={() => setMode('scroll_capture')}
-        />
+        {/* 顶栏：应用名 + 功能按钮 */}
+        <header style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '14px 18px', borderBottom: `1px solid ${palette.border}`,
+        }}>
+          <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '0.02em', color: palette.text }}>
+            Fetch Screen
+          </div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button className="fs-ghost" onClick={openCache} title="打开截图缓存目录">缓存目录</button>
+            <button className="fs-ghost" onClick={() => setSettingsOpen(true)} title="设置">设置</button>
+          </div>
+        </header>
 
-        {/* 贴图操作 */}
-        {store.lastScreenshotPath && (
-          <ActionButton
-            icon="📌"
-            label="贴图置顶"
-            hint="Ctrl+T"
-            color="#1a5c3a"
-            onClick={handlePinImage}
+        {/* 主体：标题 + 动作 */}
+        <main style={{
+          flex: 1, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', padding: '24px',
+        }}>
+          <div style={{ fontSize: 26, fontWeight: 600, marginBottom: 6, color: palette.text }}>截取屏幕</div>
+          <div style={{ fontSize: 13, color: palette.textFaint, marginBottom: 30 }}>区域截图 · 全屏截图 · 滚动长截图</div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: 340 }}>
+            <button className="fs-btn" onClick={() => { overlayIntent.current = 'region'; startRegionCapture(); }}>
+              <span>区域截图</span>
+              <span style={{ fontSize: 12, color: palette.textDim, fontFamily: 'ui-monospace, monospace' }}>
+                {appConfig?.hotkeys.screenshot ?? 'Alt+Shift+A'}
+              </span>
+            </button>
+            <button className="fs-btn" onClick={startFullCapture}>
+              <span>全屏截图</span>
+              <span style={{ fontSize: 12, color: palette.textDim, fontFamily: 'ui-monospace, monospace' }}>
+                {appConfig?.hotkeys.screenshot_full ?? 'Ctrl+Alt+A'}
+              </span>
+            </button>
+            <button className="fs-btn" onClick={() => { overlayIntent.current = 'scroll'; startRegionCapture(); }}>
+              <span>滚动长截图</span>
+              <span style={{ fontSize: 12, color: palette.textDim, fontFamily: 'ui-monospace, monospace' }}>
+                {appConfig?.hotkeys.scrollshot ?? 'Ctrl+Shift+A'}
+              </span>
+            </button>
+          </div>
+        </main>
+
+        {/* 底部状态栏 */}
+        <footer style={{
+          padding: '12px 18px', borderTop: `1px solid ${palette.border}`,
+          fontSize: 12.5, textAlign: 'center', color: palette.textFaint,
+          minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {error ? <span style={{ color: '#f87171' }}>{error}</span>
+            : success ? <span style={{ color: '#6ee7a0' }}>{success}</span>
+            : <span>{store.lastScreenshotPath ? '最近截图已就绪' : '按热键或点击按钮开始截图'}</span>}
+        </footer>
+
+        {/* 设置弹窗 */}
+        {settingsOpen && appConfig && (
+          <SettingsModal
+            config={appConfig}
+            onSave={(c) => setAppConfig(c)}
+            onClose={() => setSettingsOpen(false)}
           />
         )}
-
-        {/* 贴图数量指示 */}
-        {store.pinIds.length > 0 && (
-          <p style={{ textAlign: 'center', color: '#666', fontSize: '0.85rem', margin: 0 }}>
-            📌 {store.pinIds.length} 张贴图活跃中 · 双击贴图切换交互模式
-          </p>
-        )}
       </div>
-
-      {/* 状态栏 */}
-      <div style={{ marginTop: '1.5rem', color: '#555', fontSize: '0.8rem' }}>
-        {store.lastScreenshotPath ? '最近截图已就绪' : '按下热键或点击按钮开始截图'}
-      </div>
-    </div>
-  );
-}
-
-function ActionButton({ icon, label, hint, color, onClick }: {
-  icon: string;
-  label: string;
-  hint: string;
-  color: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        width: '100%',
-        padding: '14px 18px',
-        background: color,
-        color: '#fff',
-        border: 'none',
-        borderRadius: '10px',
-        cursor: 'pointer',
-        fontSize: '1rem',
-        transition: 'transform 0.1s, opacity 0.1s',
-      }}
-      onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; e.currentTarget.style.transform = 'scale(1.02)'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1)'; }}
-    >
-      <span style={{ fontSize: '1.4rem' }}>{icon}</span>
-      <span style={{ flex: 1, textAlign: 'left' }}>{label}</span>
-      <span style={{ fontSize: '0.8rem', opacity: 0.7, fontFamily: 'monospace' }}>{hint}</span>
-    </button>
+    </>
   );
 }
 

@@ -1,7 +1,9 @@
 use super::AppConfig;
 use super::config;
 use super::clipboard;
+use super::hotkey;
 use tauri::AppHandle;
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
 #[tauri::command]
 pub async fn get_config() -> Result<AppConfig, String> {
@@ -75,4 +77,25 @@ pub async fn save_to_file(
     }
 
     Ok(dest.to_string_lossy().to_string())
+}
+
+/// 保存配置并重新注册全局快捷键（设置页保存时调用）
+#[tauri::command]
+pub async fn update_hotkeys(app: tauri::AppHandle, config: AppConfig) -> Result<(), String> {
+    config::save_config(&config)?;
+    let _ = app.global_shortcut().unregister_all();
+    hotkey::register_global_hotkeys(&app)?;
+    log::info!("快捷键已更新并重新注册");
+    Ok(())
+}
+
+/// 临时启用/禁用全局快捷键（设置页录制快捷键时禁用，避免触发当前热键）
+#[tauri::command]
+pub async fn set_hotkeys_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let _ = app.global_shortcut().unregister_all();
+    if enabled {
+        hotkey::register_global_hotkeys(&app)?;
+    }
+    log::info!("全局快捷键 {} 状态", if enabled { "启用" } else { "禁用" });
+    Ok(())
 }

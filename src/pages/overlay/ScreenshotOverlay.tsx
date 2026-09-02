@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 
 interface ScreenshotOverlayProps {
   imagePath: string;
@@ -15,23 +14,11 @@ interface Selection {
   height: number;
 }
 
-interface MonitorInfo {
-  id: string;
-  name: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  scale_factor: number;
-  is_primary: boolean;
-}
-
 export default function ScreenshotOverlay({ imagePath, onComplete, onCancel }: ScreenshotOverlayProps) {
   const [selecting, setSelecting] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [imageLoaded, setImageLoaded] = useState(false);
-  const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -46,11 +33,6 @@ export default function ScreenshotOverlay({ imagePath, onComplete, onCancel }: S
     // 使用 Tauri 的 asset:// 协议加载
     img.src = `asset://localhost/${encodeURIComponent(imagePath)}`;
   }, [imagePath]);
-
-  // 加载显示器信息
-  useEffect(() => {
-    invoke<MonitorInfo[]>('capture_monitors').then(setMonitors).catch(console.error);
-  }, []);
 
   // 键盘事件
   useEffect(() => {

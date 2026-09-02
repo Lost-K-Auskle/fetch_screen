@@ -4,21 +4,22 @@ use rustfft::{FftPlanner, num_complex::Complex};
 /// Level 2: 边缘增强 FFT 相位相关拼接
 ///
 /// 当 Level 1 (列采样 MAD) 置信度过低时回退到此算法。
-/// 搜索范围由 Level 1 结果约束在 ±100px 内。
+/// 注意：当前使用展平的 2D→1D FFT（非真正的行列分离 2D FFT），
+/// 在垂直滚动场景下对文本/UI 仍能给出可用峰值，精度弱于真正的 2D 相位相关。
+/// 搜索范围由 Level 1 结果约束。
 pub fn compute_offset_fft(
     prev_frame: &[u8],
     next_frame: &[u8],
-    hint_dy: i32,
+    width: u32,
+    height: u32,
+    _hint_dy: i32,
     overlap_ratio: f32,
     direction: &str,
 ) -> OffsetResult {
-    let side = ((prev_frame.len() / 4) as f64).sqrt() as u32;
-    if side < 16 {
+    if width < 16 || height < 16 {
         return OffsetResult { dy: 0, dx: 0, confidence: 0.0, algorithm: "fft_too_small" };
     }
 
-    let width = side;
-    let height = side;
     let overlap = (height as f32 * overlap_ratio) as u32;
     if overlap < 16 {
         return OffsetResult { dy: 0, dx: 0, confidence: 0.0, algorithm: "fft_no_overlap" };
@@ -65,9 +66,9 @@ fn extract_roi_grayscale(
         for col in 0..width {
             let idx = ((row * width + col) * 4) as usize;
             if idx + 2 < frame.len() {
-                let g = (frame[idx] as f64 * 0.299
+                let g = frame[idx] as f64 * 0.299
                     + frame[idx + 1] as f64 * 0.587
-                    + frame[idx + 2] as f64 * 0.114);
+                    + frame[idx + 2] as f64 * 0.114;
                 gray.push(g);
             }
         }
@@ -100,8 +101,8 @@ fn sobel_x(data: &[f64], width: u32, height: u32) -> Vec<f64> {
     output
 }
 
-/// 2D FFT 相位相关
-/// 返回 (dy, dx, peak_value)
+/// 展平 2D FFT 相位相关（1D FFT 处理展平的 2D 数据）
+/// 注意：非真正的 2D FFT（行列分离），但峰值位置在垂直滚动场景下仍可指示大致偏移。
 fn phase_correlate(
     prev: &[f64], next: &[f64],
     w: usize, h: usize,

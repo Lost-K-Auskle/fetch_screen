@@ -20,6 +20,11 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         pin: resolve(__dirname, 'pin.html'),
+        overlay: resolve(__dirname, 'overlay.html'),
+        preview: resolve(__dirname, 'preview.html'),
+        pinhandle: resolve(__dirname, 'pinhandle.html'),
+        scroll_toolbar: resolve(__dirname, 'scroll_toolbar.html'),
+        scroll_frame: resolve(__dirname, 'scroll_frame.html'),
       },
     },
   },

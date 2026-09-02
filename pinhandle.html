@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Handle</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+      #h {
+        width: 100%; height: 100%;
+        background: rgba(30, 40, 70, 0.9);
+        border: 1px solid rgba(120, 170, 255, 0.7);
+        border-radius: 7px;
+        display: flex; align-items: center; justify-content: center;
+        color: #9fc3ff; font-size: 10px; cursor: pointer; user-select: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="h" title="双击恢复交互">⣿</div>
+    <script>
+      // 双击小把手 → 切回贴图交互模式（穿透时整窗点不到，靠这个把手恢复）
+      window.addEventListener('dblclick', function () {
+        if (window.__TAURI__) {
+          window.__TAURI__.core.invoke('set_pin_passthrough', { enabled: false }).catch(console.error);
+        }
+      });
+    </script>
+  </body>
+</html>
