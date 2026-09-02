@@ -48,7 +48,7 @@ npm run tauri build
 
 | 方式 | 产物 | 说明 |
 |------|------|------|
-| **安装包（推荐）** | `bundle/nsis/Fetch Screen_0.1.0_x64-setup.exe` | 一键安装，自动创建开始菜单/桌面快捷方式 |
+| **安装包（推荐）** | `bundle/nsis/Fetch Screen_0.1.0_x64-setup.exe` | 一键安装，自动创建开始菜单/桌面快捷方式；**已内置 WebView2Loader.dll**，安装后直接运行 |
 | **便携版** | `fetch-screen.exe` + `WebView2Loader.dll` | 两个文件放同一目录即可直接运行，无需安装 |
 
 **便携版说明**：`fetch-screen.exe` 需与 `WebView2Loader.dll` 放在同一目录（Win11 系统自带 WebView2 运行时）。若目标机器是 Win10，请先安装 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
