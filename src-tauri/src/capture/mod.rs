@@ -40,9 +40,24 @@ pub struct WindowInfo {
     pub is_minimized: bool,
 }
 
-/// 缓存截图的路径，避免 IPC 传输像素数据
+use std::sync::Mutex;
+
+static CACHE_DIR: Mutex<Option<std::path::PathBuf>> = Mutex::new(None);
+
+/// 缓存截图的路径，避免 IPC 传输像素数据。
+/// 截图文件可自定义存放目录（AppConfig.cache_dir），此处返回运行时已同步的值；
+/// 默认 %TEMP%/fetch_screen。
 pub fn get_cache_dir() -> std::path::PathBuf {
-    std::env::temp_dir().join("fetch_screen")
+    let g = CACHE_DIR.lock().unwrap();
+    g.clone().unwrap_or_else(|| std::env::temp_dir().join("fetch_screen"))
+}
+
+/// 设置当前截图缓存目录（配置加载/保存时由 system 模块同步调用）。
+/// 空路径忽略（保持默认），避免 save_to_cache 落到无效目录。
+pub fn set_cache_dir(path: std::path::PathBuf) {
+    if !path.as_os_str().is_empty() {
+        *CACHE_DIR.lock().unwrap() = Some(path);
+    }
 }
 
 pub fn ensure_cache_dir() -> std::path::PathBuf {

@@ -18,13 +18,17 @@ export interface AppConfig {
   hide_ui_on_capture: boolean;
   preview_drag_mode: string;
   preview_bg_mode: string;
+  cache_dir: string;
+  preview_position: string;
+  pan_modifier: string;
 }
 
-// 注：pin_last 尚未接线到任何动作，暂不展示
+// 注：pin_last 已接线到贴图穿透切换，现暴露到设置里供录制修改
 const FIELDS: { key: keyof HotkeyConfig; label: string }[] = [
   { key: 'screenshot', label: '区域截图' },
   { key: 'screenshot_full', label: '全屏截图' },
   { key: 'scrollshot', label: '滚动长截图' },
+  { key: 'pin_last', label: '贴图穿透' },
 ];
 
 // e.code（物理键名）→ 后端 parse_key 接受的 token
@@ -69,6 +73,9 @@ export default function SettingsModal({ config, onSave, onClose }: Props) {
   const [hideUi, setHideUi] = useState<boolean>(config.hide_ui_on_capture ?? true);
   const [dragMode, setDragMode] = useState<string>(config.preview_drag_mode ?? 'left_drag');
   const [bgMode, setBgMode] = useState<string>(config.preview_bg_mode ?? 'black');
+  const [cacheDir, setCacheDir] = useState<string>(config.cache_dir ?? '');
+  const [previewPosition, setPreviewPosition] = useState<string>(config.preview_position ?? 'bottom_right');
+  const [panModifier, setPanModifier] = useState<string>(config.pan_modifier ?? 'Shift');
 
   // 打开设置时临时禁用全局热键，避免录制时触发当前快捷键
   useEffect(() => {
@@ -102,7 +109,7 @@ export default function SettingsModal({ config, onSave, onClose }: Props) {
       // 先重新拉取磁盘上的最新配置，再合并本次修改。
       // 否则会用挂载时的旧配置覆盖运行期间磁盘上的新值（如 hide_ui_on_capture 被外部改回 true）。
       const latest = await invoke<AppConfig>('get_config');
-      const next: AppConfig = { ...latest, hotkeys: values, hide_ui_on_capture: hideUi, preview_drag_mode: dragMode, preview_bg_mode: bgMode };
+      const next: AppConfig = { ...latest, hotkeys: values, hide_ui_on_capture: hideUi, preview_drag_mode: dragMode, preview_bg_mode: bgMode, cache_dir: cacheDir.trim(), preview_position: previewPosition, pan_modifier: panModifier };
       await invoke('update_hotkeys', { config: next });
       onSave(next);
       onClose();
@@ -199,6 +206,66 @@ export default function SettingsModal({ config, onSave, onClose }: Props) {
             <option value="black">黑色</option>
             <option value="white">白色</option>
             <option value="hollow">镂空（透明）</option>
+          </select>
+        </div>
+
+        {/* 截图缓存目录（截图文件存放位置） */}
+        <div style={{
+          marginTop: 12, paddingTop: 12, borderTop: '1px solid #333',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+        }}>
+          <span style={{ fontSize: '0.85rem' }}>截图缓存目录</span>
+          <input
+            type="text"
+            value={cacheDir}
+            onChange={(e) => setCacheDir(e.target.value)}
+            placeholder="C:\Users\xx\AppData\Local\Temp\fetch_screen"
+            style={{
+              flex: 1, marginLeft: 8, padding: '6px 10px', background: '#2a3040',
+              border: '1px solid #3a4150', borderRadius: 6, color: '#e0e0e0', fontSize: '0.8rem',
+            }}
+          />
+        </div>
+
+        {/* 浮窗默认位置 */}
+        <div style={{
+          marginTop: 12, paddingTop: 12, borderTop: '1px solid #333',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+        }}>
+          <span style={{ fontSize: '0.85rem' }}>浮窗默认位置</span>
+          <select
+            value={previewPosition}
+            onChange={(e) => setPreviewPosition(e.target.value)}
+            style={{
+              padding: '6px 10px', background: '#2a3040', border: '1px solid #3a4150',
+              borderRadius: 6, color: '#e0e0e0', fontSize: '0.8rem', cursor: 'pointer',
+            }}
+          >
+            <option value="bottom_right">右下角</option>
+            <option value="top_left">左上角</option>
+            <option value="top_right">右上角</option>
+            <option value="bottom_left">左下角</option>
+            <option value="cursor">截图位置自选（光标处）</option>
+          </select>
+        </div>
+
+        {/* 浮窗平移修饰键 */}
+        <div style={{
+          marginTop: 12, paddingTop: 12, borderTop: '1px solid #333',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+        }}>
+          <span style={{ fontSize: '0.85rem' }}>平移组合修饰键</span>
+          <select
+            value={panModifier}
+            onChange={(e) => setPanModifier(e.target.value)}
+            style={{
+              padding: '6px 10px', background: '#2a3040', border: '1px solid #3a4150',
+              borderRadius: 6, color: '#e0e0e0', fontSize: '0.8rem', cursor: 'pointer',
+            }}
+          >
+            <option value="Shift">Shift</option>
+            <option value="Ctrl">Ctrl</option>
+            <option value="Alt">Alt</option>
           </select>
         </div>
 

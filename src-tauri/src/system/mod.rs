@@ -23,6 +23,15 @@ pub struct AppConfig {
     /// 预览窗无截图区域背景: "black" = 黑色 / "white" = 白色 / "hollow" = 镂空(透明)
     #[serde(default = "default_preview_bg_mode")]
     pub preview_bg_mode: String,
+    /// 截图缓存目录（截图文件存放位置，可在设置中自定义；默认 %TEMP%/fetch_screen）
+    #[serde(default = "default_cache_dir")]
+    pub cache_dir: String,
+    /// 截完图浮窗默认位置: "top_left" / "top_right" / "bottom_left" / "bottom_right" / "cursor"(截图位置自选=光标处)
+    #[serde(default = "default_preview_position")]
+    pub preview_position: String,
+    /// 浮窗内平移组合热键的修饰键: "Shift" / "Ctrl" / "Alt"
+    #[serde(default = "default_pan_modifier")]
+    pub pan_modifier: String,
 }
 
 fn default_preview_drag_mode() -> String {
@@ -31,6 +40,18 @@ fn default_preview_drag_mode() -> String {
 
 fn default_preview_bg_mode() -> String {
     "black".to_string()
+}
+
+fn default_cache_dir() -> String {
+    std::env::temp_dir().join("fetch_screen").to_string_lossy().to_string()
+}
+
+fn default_preview_position() -> String {
+    "bottom_right".to_string()
+}
+
+fn default_pan_modifier() -> String {
+    "Shift".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,6 +128,9 @@ impl Default for AppConfig {
             hide_ui_on_capture: true,
             preview_drag_mode: "left_drag".to_string(),
             preview_bg_mode: "black".to_string(),
+            cache_dir: default_cache_dir(),
+            preview_position: "bottom_right".to_string(),
+            pan_modifier: "Shift".to_string(),
         }
     }
 }

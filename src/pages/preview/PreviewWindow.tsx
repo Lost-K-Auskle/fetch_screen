@@ -28,6 +28,10 @@ export default function PreviewWindow() {
   const [dragMode, setDragMode] = useState<'left_drag' | 'shift_drag'>('left_drag');
   // 无截图区域背景: "black" = 黑色 / "white" = 白色 / "hollow" = 镂空(透明)
   const [bgMode, setBgMode] = useState<'black' | 'white' | 'hollow'>('black');
+  // 平移组合热键的修饰键: "Shift" / "Ctrl" / "Alt"（可在设置自定义）
+  const [panModifier, setPanModifier] = useState<'Shift' | 'Ctrl' | 'Alt'>('Shift');
+  // 穿透恢复热键提示（从配置读取，非硬编码）
+  const [passthroughHotkey, setPassthroughHotkey] = useState('Ctrl+Shift+P');
   // 供 Delete 键等异步回调读取最新 payload（避免闭包抓到初始 null）
   const payloadRef = useRef<PreviewPayload | null>(null);
   useEffect(() => { payloadRef.current = payload; }, [payload]);
@@ -51,13 +55,16 @@ export default function PreviewWindow() {
       })
       .catch(console.error);
 
-    // 读取拖拽方式 + 背景样式配置
-    invoke<{ preview_drag_mode?: string; preview_bg_mode?: string }>('get_config')
+    // 读取拖拽方式 + 背景样式 + 平移修饰键 + 穿透热键配置
+    invoke<{ preview_drag_mode?: string; preview_bg_mode?: string; pan_modifier?: string; hotkeys?: { pin_last?: string } }>('get_config')
       .then((c) => {
         if (c?.preview_drag_mode === 'shift_drag') setDragMode('shift_drag');
         if (c?.preview_bg_mode === 'white') setBgMode('white');
         else if (c?.preview_bg_mode === 'hollow') setBgMode('hollow');
         else setBgMode('black');
+        if (c?.pan_modifier === 'Ctrl' || c?.pan_modifier === 'Alt') setPanModifier(c.pan_modifier);
+        else setPanModifier('Shift');
+        if (c?.hotkeys?.pin_last) setPassthroughHotkey(c.hotkeys.pin_last);
       })
       .catch(() => {});
   }, []);
@@ -145,8 +152,10 @@ export default function PreviewWindow() {
   const handleDragMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('button, input')) return;
     if (e.button !== 0) return;
+    // 平移修饰键可自定义：Shift（默认）/ Ctrl / Alt
+    const modHeld = panModifier === 'Ctrl' ? e.ctrlKey : panModifier === 'Alt' ? e.altKey : e.shiftKey;
     const shiftDrags = dragMode === 'shift_drag';
-    if (e.shiftKey === shiftDrags) {
+    if (modHeld === shiftDrags) {
       // 拖窗
       getCurrentWindow().startDragging().catch(() => {});
       return;
@@ -278,13 +287,13 @@ export default function PreviewWindow() {
           color: '#9fc3ff', fontSize: 10, pointerEvents: 'none',
           background: 'rgba(0,0,0,0.5)', padding: '2px 6px', borderRadius: 4,
         }}>
-          穿透中 · Ctrl+Shift+P 恢复
+          穿透中 · {passthroughHotkey} 恢复
         </div>
       )}
 
       {/* 右上角小图标按钮 */}
       <div style={{ position: 'absolute', top: 6, right: 6, display: 'flex', gap: 4, zIndex: 5 }}>
-        <MiniBtn title={passthrough ? '穿透中（Ctrl+Shift+P 恢复）' : '鼠标穿透'} onClick={handlePassthrough} active={passthrough}>🖱️</MiniBtn>
+        <MiniBtn title={passthrough ? `穿透中（${passthroughHotkey} 恢复）` : '鼠标穿透'} onClick={handlePassthrough} active={passthrough}>🖱️</MiniBtn>
         <MiniBtn title={pinned ? '取消置顶' : '置顶'} onClick={handlePin} active={pinned}>📌</MiniBtn>
         <MiniBtn title="关闭" onClick={handleClose}>✕</MiniBtn>
         <MiniBtn title="删除" onClick={handleDelete}>🗑</MiniBtn>

@@ -25,6 +25,12 @@ pub fn run() {
             // 注册全局快捷键
             system::hotkey::register_global_hotkeys(app.handle())?;
 
+            // 同步缓存目录（config.json 已存在时 load_config 不会触发 save_config，
+            // 需显式读取配置并设置，保证 save_to_cache 使用用户自定义目录）
+            if let Some(cfg) = system::config::load_config(app.handle()) {
+                crate::capture::set_cache_dir(std::path::PathBuf::from(&cfg.cache_dir));
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

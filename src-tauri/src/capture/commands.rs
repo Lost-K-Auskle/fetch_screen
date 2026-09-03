@@ -239,6 +239,19 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+/// 获取当前鼠标屏幕坐标（物理像素，GetCursorPos）
+fn get_cursor_pos() -> (i32, i32) {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    let mut pt = POINT::default();
+    unsafe {
+        if GetCursorPos(&mut pt).is_ok() {
+            return (pt.x, pt.y);
+        }
+    }
+    (0, 0)
+}
+
 #[tauri::command]
 pub async fn capture_fullscreen(
     app: tauri::AppHandle,
@@ -391,8 +404,32 @@ pub async fn show_preview(app: tauri::AppHandle, image_path: String) -> Result<(
 
     let label = format!("preview_{}", uuid::Uuid::new_v4());
     let margin = 24.0;
-    let x = primary.x as f64 + primary.width as f64 - w as f64 - margin;
-    let y = primary.y as f64 + primary.height as f64 - h as f64 - margin;
+    // 浮窗默认位置：左上/右上/左下/右下，或"截图位置自选"(光标处)
+    let cfg = crate::system::config::load_config(&app).unwrap_or_default();
+    let (x, y) = match cfg.preview_position.as_str() {
+        "top_left" => (primary.x as f64 + margin, primary.y as f64 + margin),
+        "top_right" => (
+            primary.x as f64 + primary.width as f64 - w as f64 - margin,
+            primary.y as f64 + margin,
+        ),
+        "bottom_left" => (
+            primary.x as f64 + margin,
+            primary.y as f64 + primary.height as f64 - h as f64 - margin,
+        ),
+        "cursor" => {
+            let (cx, cy) = get_cursor_pos();
+            let max_x = primary.x as f64 + primary.width as f64 - w as f64;
+            let max_y = primary.y as f64 + primary.height as f64 - h as f64;
+            (
+                (cx as f64 - w as f64 / 2.0).clamp(primary.x as f64, max_x),
+                (cy as f64 - h as f64 / 2.0).clamp(primary.y as f64, max_y),
+            )
+        }
+        _ => (
+            primary.x as f64 + primary.width as f64 - w as f64 - margin,
+            primary.y as f64 + primary.height as f64 - h as f64 - margin,
+        ),
+    };
     let win = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("preview.html".into()))
         .title("")
         .inner_size(w as f64, h as f64)

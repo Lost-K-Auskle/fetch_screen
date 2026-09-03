@@ -51,6 +51,9 @@ pub fn save_config(config: &AppConfig) -> Result<(), String> {
     std::fs::write(&path, content)
         .map_err(|e| format!("写入配置文件失败: {}", e))?;
 
+    // 同步缓存目录到全局（所有 save_to_cache / ensure_cache_dir 都经 get_cache_dir 读它）
+    crate::capture::set_cache_dir(std::path::PathBuf::from(&config.cache_dir));
+
     log::info!("配置已保存: {:?}", path);
     Ok(())
 }

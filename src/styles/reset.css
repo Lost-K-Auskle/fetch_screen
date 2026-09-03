@@ -1,0 +1,4 @@
+/* 全局基础重置：避免各窗口出现默认边距/白底/滚动条（多入口 HTML 共用）。
+   原为各 HTML 内联 <style>，因 vite 5.x 多入口 html-inline-proxy bug 外提至此。 */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
